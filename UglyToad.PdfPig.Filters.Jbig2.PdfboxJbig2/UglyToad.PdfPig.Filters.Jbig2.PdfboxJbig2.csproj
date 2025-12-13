@@ -43,7 +43,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="PdfPig" Version="0.1.16" />
+		<ProjectReference Include="..\..\PdfPig\src\UglyToad.PdfPig.Core\UglyToad.PdfPig.Core.csproj" />
+		<ProjectReference Include="..\..\PdfPig\src\UglyToad.PdfPig.DocumentLayoutAnalysis\UglyToad.PdfPig.DocumentLayoutAnalysis.csproj" />
+		<ProjectReference Include="..\..\PdfPig\src\UglyToad.PdfPig.Fonts\UglyToad.PdfPig.Fonts.csproj" />
+		<ProjectReference Include="..\..\PdfPig\src\UglyToad.PdfPig.Tokenization\UglyToad.PdfPig.Tokenization.csproj" />
+		<ProjectReference Include="..\..\PdfPig\src\UglyToad.PdfPig.Tokens\UglyToad.PdfPig.Tokens.csproj" />
+		<ProjectReference Include="..\..\PdfPig\src\UglyToad.PdfPig\UglyToad.PdfPig.csproj" />
 	</ItemGroup>
 
 </Project>
