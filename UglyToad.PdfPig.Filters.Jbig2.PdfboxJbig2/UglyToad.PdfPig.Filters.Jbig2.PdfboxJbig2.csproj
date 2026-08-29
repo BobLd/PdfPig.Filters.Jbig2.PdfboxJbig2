@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>netstandard2.0;netstandard2.1;net462;net471;net6.0;net8.0</TargetFrameworks>
 		<LangVersion>12</LangVersion>
-		<Version>0.1.15.1</Version>
+		<Version>0.1.16.0</Version>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
@@ -18,7 +18,7 @@
 		<PackageTags>PDF;Reader;Document;Adobe;PDFBox;PdfPig;pdf;file;C#;dotnet;.NET;image;jbig;jbig2</PackageTags>
 		<RepositoryUrl>https://github.com/BobLd/UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2</RepositoryUrl>
 		<PackageProjectUrl>https://github.com/BobLd/UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2</PackageProjectUrl>
-		<Description>PdfPig implementation of the JBIG2 filter, based on pdfbox-jbig2.</Description>
+		<Description>PdfPig fully managed implementation of the JBIG2 filter, based on pdfbox-jbig2.</Description>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
@@ -43,7 +43,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="PdfPig" Version="0.1.15" />
+		<PackageReference Include="PdfPig" Version="0.1.16" />
 	</ItemGroup>
 
 </Project>
