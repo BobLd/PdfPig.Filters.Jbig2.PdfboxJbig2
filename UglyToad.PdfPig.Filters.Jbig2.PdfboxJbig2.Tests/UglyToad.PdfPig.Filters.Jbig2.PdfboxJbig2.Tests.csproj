@@ -10,18 +10,14 @@
 		<IsTestProject>true</IsTestProject>
 		<SignAssembly>True</SignAssembly>
 		<AssemblyOriginatorKeyFile>..\UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2\UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.snk</AssemblyOriginatorKeyFile>
-		<IsTestingPlatformApplication>false</IsTestingPlatformApplication>
 		<OutputType>Exe</OutputType>
+		<UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+		<TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="coverlet.collector" Version="6.0.0" />
-		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
 		<PackageReference Include="xunit.v3" Version="4.0.0" />
-		<PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
+		<PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.10.0" />
 	</ItemGroup>
 
 	<ItemGroup>
