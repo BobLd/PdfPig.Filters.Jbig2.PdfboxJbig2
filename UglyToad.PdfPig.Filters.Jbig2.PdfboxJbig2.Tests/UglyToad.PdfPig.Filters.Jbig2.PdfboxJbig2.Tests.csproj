@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net471;net6.0;net8.0</TargetFrameworks>
+		<TargetFrameworks>net472;net8.0</TargetFrameworks>
 		<LangVersion>12</LangVersion>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
@@ -10,13 +10,18 @@
 		<IsTestProject>true</IsTestProject>
 		<SignAssembly>True</SignAssembly>
 		<AssemblyOriginatorKeyFile>..\UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2\UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.snk</AssemblyOriginatorKeyFile>
+		<IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+		<OutputType>Exe</OutputType>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<PackageReference Include="coverlet.collector" Version="6.0.0" />
-		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
-		<PackageReference Include="xunit" Version="2.5.3" />
-		<PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+		<PackageReference Include="xunit.v3" Version="4.0.0" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
 	</ItemGroup>
 
 	<ItemGroup>
