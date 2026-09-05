@@ -115,13 +115,11 @@
             Span<byte> buffer = stackalloc byte[4];
             Read(buffer);
 
-            buffer.Reverse();
-
-#if NET
-            return BitConverter.ToUInt32(buffer);
-#else
-            return BitConverter.ToUInt32(buffer.ToArray(), 0);
-#endif
+            // Assembled directly from the big endian stream bytes. Going through BitConverter meant
+            // reversing the span in place first, and on the target frameworks without a span overload
+            // it also copied the span to a throwaway array. This is also endian independent, which the
+            // BitConverter version was not.
+            return (uint)(buffer[0] << 24 | buffer[1] << 16 | buffer[2] << 8 | buffer[3]);
         }
 
         /// <inheritdoc />
