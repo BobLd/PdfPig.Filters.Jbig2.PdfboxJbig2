@@ -16,10 +16,15 @@
         /// </summary>
         private readonly long offset;
 
+        private const int MaxBufferSize = 4096;
+
         /// <summary>
         /// A buffer which is used to improve read performance.
+        /// <para>Allocated on first use and never larger than the window itself. One of these streams is
+        /// created per segment, and the bulk read path never touches this buffer, so allocating the full
+        /// size up front cost several KB per segment that was usually wasted.</para>
         /// </summary>
-        private readonly byte[] buffer = new byte[4096];
+        private byte[]? buffer;
 
         /// <summary>
         /// Location of the first byte in the buffer with respect to the start of the stream.
@@ -71,7 +76,7 @@
                 }
             }
 
-            int read = 0xff & buffer[(int)(streamPosition - bufferBase)];
+            int read = 0xff & buffer![(int)(streamPosition - bufferBase)];
 
             streamPosition++;
 
@@ -132,6 +137,8 @@
                 {
                     wrappedStream.Seek(desiredPosition);
                 }
+
+                buffer ??= new byte[(int)Math.Min(MaxBufferSize, Length)];
 
                 bufferBase = streamPosition;
                 int toRead = (int)Math.Min(buffer.Length, Length - streamPosition);

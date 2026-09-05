@@ -4,6 +4,8 @@ using UglyToad;
 
 namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 {
+    using System;
+
     /// <summary>
     /// This class represents a generic region segment.
     /// Parsing is done as described in 7.4.5.
@@ -251,14 +253,11 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         /// <param name="lineNumber">Coordinate of the row that should be set.</param>
         private void CopyLineAbove(int lineNumber)
         {
-            int targetByteIndex = lineNumber * regionBitmap.RowStride;
-            int sourceByteIndex = targetByteIndex - regionBitmap.RowStride;
+            int rowStride = regionBitmap.RowStride;
+            int targetByteIndex = lineNumber * rowStride;
 
-            for (int i = 0; i < regionBitmap.RowStride; i++)
-            {
-                // Get the byte that should be copied and put it into Bitmap
-                regionBitmap.SetByte(targetByteIndex++, regionBitmap.GetByte(sourceByteIndex++));
-            }
+            var rows = regionBitmap.ByteArray.AsSpan();
+            rows.Slice(targetByteIndex - rowStride, rowStride).CopyTo(rows.Slice(targetByteIndex, rowStride));
         }
 
         private void DecodeTemplate0a(int lineNumber, int width, int rowStride,
