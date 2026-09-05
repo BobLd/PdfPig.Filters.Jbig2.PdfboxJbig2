@@ -595,13 +595,13 @@
                 long rdy = DecodeRdy();
 
                 // 5)
-                /* long symInRefSize = 0; */
+                long symInRefSize = 0;
                 if (isHuffmanEncoded)
                 {
-                    /* symInRefSize = */
-                    DecodeSymInRefSize();
+                    symInRefSize = DecodeSymInRefSize();
                     subInputStream.SkipBits();
                 }
+                long streamPosition0 = subInputStream.Position;
 
                 // 6)
                 Jbig2Bitmap ibo = symbols[(int)id];
@@ -611,10 +611,10 @@
                 int genericRegionReferenceDX = (int)((rdw >> 1) + rdx);
                 int genericRegionReferenceDY = (int)((rdh >> 1) + rdy);
 
-                if (genericRefinementRegion == null)
-                {
-                    genericRefinementRegion = new GenericRefinementRegion(subInputStream);
-                }
+                arithmeticDecoder ??= new ArithmeticDecoder(subInputStream);
+                cx ??= new CX(65536, 1);
+
+                genericRefinementRegion ??= new GenericRefinementRegion(subInputStream);
 
                 genericRefinementRegion.SetParameters(cx, arithmeticDecoder, sbrTemplate,
                         (int)(wo + rdw), (int)(ho + rdh), ibo, genericRegionReferenceDX,
@@ -625,7 +625,13 @@
                 // 7
                 if (isHuffmanEncoded)
                 {
-                    subInputStream.SkipBits();
+                    // Make sure that the processed bytes are not more than symInRefSize
+                    if (subInputStream.Position > streamPosition0 + symInRefSize)
+                    {
+                        throw new Jbig2Exception("Refinement bitmap bytes expected: " + symInRefSize +
+                                ", bytes read: " + (subInputStream.Position - streamPosition0));
+                    }
+                    subInputStream.Seek(streamPosition0 + symInRefSize); // needed if less
                 }
             }
             return ib;

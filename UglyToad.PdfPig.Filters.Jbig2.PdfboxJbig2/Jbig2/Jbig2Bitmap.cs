@@ -61,7 +61,14 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
             ref byte src = ref ByteArray[byteIndex];
 
-            src = (byte)(src | pixelValue << shift);
+            if ((pixelValue & 1) == 1)
+            {
+                src = (byte)(src | 1 << shift);
+            }
+            else
+            {
+                src = (byte)(src & ~(1 << shift));
+            }
         }
 
         /// <summary>
