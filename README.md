@@ -1,6 +1,6 @@
 # UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2
 
-Port to C# and PdfPig of the Java ImageIO plugin for the JBIG2 image format (see https://github.com/apache/pdfbox-jbig2).
+Port to C# and PdfPig of the Java ImageIO plugin for the JBIG2 image format (see https://github.com/apache/pdfbox-jbig2). This port was last compared against upstream [apache/pdfbox-jbig2](https://github.com/apache/pdfbox-jbig2) at commit [`57b5f93`](https://github.com/apache/pdfbox-jbig2/commit/57b5f93ba1c23767df2828a3c2682143995757ad) (2026-06-29).
 
 Original port done by @kasperdaff as part of a PR for PdfPig, see https://github.com/UglyToad/PdfPig/pull/338 and then https://github.com/UglyToad/PdfPig/pull/631
 
