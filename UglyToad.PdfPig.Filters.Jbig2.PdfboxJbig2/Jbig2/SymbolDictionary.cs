@@ -65,6 +65,8 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         private GenericRefinementRegion genericRefinementRegion;
         private CX cx;
 
+        private SymbolDictionary lastSymbolDictionary;
+
         private CX cxIADH;
         private CX cxIADW;
         private CX cxIAAI;
@@ -95,24 +97,35 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             ReadAmountOfNewSymbols();
             SetInSyms();
 
-            if (isCodingContextUsed)
-            {
-                SegmentHeader[] rtSegments = segmentHeader.RtSegments;
+            bool isContextAdopted = false;
 
+            SegmentHeader[] rtSegments = segmentHeader.RtSegments;
+
+            if (rtSegments != null)
+            {
                 for (int i = rtSegments.Length - 1; i >= 0; i--)
                 {
                     if (rtSegments[i].SegmentType == 0)
                     {
-                        SymbolDictionary symbolDictionary = (SymbolDictionary)rtSegments[i].GetSegmentData();
+                        lastSymbolDictionary = (SymbolDictionary)rtSegments[i].GetSegmentData();
 
-                        if (symbolDictionary.isCodingContextRetained)
+                        if (isCodingContextUsed && lastSymbolDictionary.isCodingContextRetained)
                         {
                             // 7.4.2.2 3)
-                            SetRetainedCodingContexts(symbolDictionary);
+                            ValidateContextValues(lastSymbolDictionary);
+                            isContextAdopted = true;
                         }
                         break;
                     }
                 }
+            }
+
+            if (isCodingContextUsed && !isContextAdopted)
+            {
+                throw new InvalidHeaderValueException(
+                    lastSymbolDictionary is null
+                        ? "Coding context reuse requested, but no referred symbol dictionary found"
+                        : "Coding context reuse requested, but last referred symbol dictionary does not retain coding context");
             }
 
             CheckInput();
@@ -230,18 +243,60 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             }
         }
 
-        private void SetRetainedCodingContexts(SymbolDictionary sd)
+        /// <summary>
+        /// Adopt retained arithmetic coding context from another symbol dictionary.
+        /// <para>
+        /// Per spec 7.4.2.2, only bitmap coding statistics (CX) are reused; configuration
+        /// compatibility is validated in <see cref="ParseHeader"/> before this is called, and the
+        /// <see cref="ArithmeticDecoder"/> must not be reused as it is bound to the current stream.
+        /// </para>
+        /// </summary>
+        private void AdoptRetainedCodingContexts(SymbolDictionary sd)
         {
-            arithmeticDecoder = sd.arithmeticDecoder;
-            isHuffmanEncoded = sd.isHuffmanEncoded;
-            useRefinementAggregation = sd.useRefinementAggregation;
-            sdTemplate = sd.sdTemplate;
-            sdrTemplate = sd.sdrTemplate;
-            sdATX = sd.sdATX;
-            sdATY = sd.sdATY;
-            sdrATX = sd.sdrATX;
-            sdrATY = sd.sdrATY;
-            cx = sd.cx;
+            cx = sd.cx.Copy();
+        }
+
+        /// <summary>
+        /// The values of SDHUFF, SDREFAGG, SDTEMPLATE, SDRTEMPLATE, and all of the AT locations
+        /// (both direct and refinement) for this symbol dictionary must match the corresponding
+        /// values from the symbol dictionary whose context values are being used.
+        /// </summary>
+        private void ValidateContextValues(SymbolDictionary sd)
+        {
+            if (isHuffmanEncoded != sd.isHuffmanEncoded
+                || useRefinementAggregation != sd.useRefinementAggregation
+                || sdTemplate != sd.sdTemplate
+                || sdrTemplate != sd.sdrTemplate
+                || !ArraysEqual(sdATX, sd.sdATX)
+                || !ArraysEqual(sdATY, sd.sdATY)
+                || !ArraysEqual(sdrATX, sd.sdrATX)
+                || !ArraysEqual(sdrATY, sd.sdrATY))
+            {
+                throw new InvalidHeaderValueException("SymbolDictionary reuse values don't match");
+            }
+        }
+
+        private static bool ArraysEqual(short[] a, short[] b)
+        {
+            if (a is null || b is null)
+            {
+                return a == b;
+            }
+
+            if (a.Length != b.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private void CheckInput()
@@ -294,9 +349,26 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                     sbSymCodeLen = GetSbSymCodeLen();
                 }
 
+                // decodes all referred segments including lastSymbolDictionary
+                SetSymbolsArray();
+
+                // Bitmap CX needed for both arithmetic path and huffman+refinement path
+                if (!isHuffmanEncoded || useRefinementAggregation)
+                {
+                    if (isCodingContextUsed)
+                    {
+                        AdoptRetainedCodingContexts(lastSymbolDictionary);
+                    }
+                    else
+                    {
+                        ResetBitmapCodingStatistics();
+                    }
+                }
+
+                // Integer coders only needed for arithmetic path
                 if (!isHuffmanEncoded)
                 {
-                    SetCodingStatistics();
+                    ResetIntegerCoderStatistics();
                 }
 
                 // 6.5.5 1)
@@ -308,8 +380,6 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 {
                     newSymbolsWidths = new int[amountOfNewSymbols];
                 }
-
-                SetSymbolsArray();
 
                 // 6.5.5 3)
                 int heightClassHeight = 0;
@@ -404,54 +474,37 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             return exportSymbols;
         }
 
-        private void SetCodingStatistics()
+        /// <summary>
+        /// Step 4 (7.4.2.2): Reset arithmetic coding statistics for the generic region and
+        /// generic refinement region decoding procedures to zero. Only the bitmap CX is reset
+        /// here; integer coder contexts are separate (step 5).
+        /// </summary>
+        private void ResetBitmapCodingStatistics()
         {
-            if (cxIADT is null)
-            {
-                cxIADT = new CX(512, 1);
-            }
+            cx = new CX(65536, 1);
+        }
 
-            if (cxIADH is null)
-            {
-                cxIADH = new CX(512, 1);
-            }
+        /// <summary>
+        /// Step 5 (7.4.2.2): Reset arithmetic coding statistics for all contexts of all
+        /// arithmetic integer coders to zero.
+        /// </summary>
+        private void ResetIntegerCoderStatistics()
+        {
+            cxIADT = new CX(512, 1);
+            cxIADH = new CX(512, 1);
+            cxIADW = new CX(512, 1);
+            cxIAAI = new CX(512, 1);
+            cxIAEX = new CX(512, 1);
 
-            if (cxIADW is null)
-            {
-                cxIADW = new CX(512, 1);
-            }
-
-            if (cxIAAI is null)
-            {
-                cxIAAI = new CX(512, 1);
-            }
-
-            if (cxIAEX is null)
-            {
-                cxIAEX = new CX(512, 1);
-            }
-
-            if (useRefinementAggregation && cxIAID is null)
+            if (useRefinementAggregation)
             {
                 cxIAID = new CX(1 << sbSymCodeLen, 1);
                 cxIARDX = new CX(512, 1);
                 cxIARDY = new CX(512, 1);
             }
 
-            if (cx is null)
-            {
-                cx = new CX(65536, 1);
-            }
-
-            if (arithmeticDecoder is null)
-            {
-                arithmeticDecoder = new ArithmeticDecoder(subInputStream);
-            }
-
-            if (iDecoder is null)
-            {
-                iDecoder = new ArithmeticIntegerDecoder(arithmeticDecoder);
-            }
+            arithmeticDecoder = new ArithmeticDecoder(subInputStream);
+            iDecoder = new ArithmeticIntegerDecoder(arithmeticDecoder);
         }
 
         private void DecodeHeightClassBitmap(Jbig2Bitmap heightClassCollectiveBitmap,
@@ -570,6 +623,8 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             int id;
             int rdx;
             int rdy;
+            long symInRefSize = 0;
+            long streamPosition0 = 0;
             if (isHuffmanEncoded)
             {
                 // 2) - 4)
@@ -578,11 +633,17 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 rdy = (int)StandardTables.GetTable(15).Decode(subInputStream);
 
                 // 5) a)
-                /* symInRefSize = */
-                StandardTables.GetTable(1).Decode(subInputStream);
+                symInRefSize = StandardTables.GetTable(1).Decode(subInputStream);
 
                 // 5) b) - Skip over remaining bits
                 subInputStream.SkipBits();
+
+                streamPosition0 = subInputStream.Position;
+
+                // 5) c) - Initialize arithmetic decoder for refinement bitmap
+                // Note that the same subInputStream is used for both symbol dictionary decoding
+                // and refinement bitmap decoding.
+                arithmeticDecoder = new ArithmeticDecoder(subInputStream);
             }
             else
             {
@@ -600,27 +661,33 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             // 7)
             if (isHuffmanEncoded)
             {
-                subInputStream.SkipBits();
-                // Make sure that the processed bytes are equal to the value read in step 5 a)
+                // Make sure that the processed bytes are not more than symInRefSize
+                if (subInputStream.Position > streamPosition0 + symInRefSize)
+                {
+                    throw new Jbig2Exception("Refinement bitmap bytes expected: " + symInRefSize +
+                            ", bytes read: " + (subInputStream.Position - streamPosition0));
+                }
+                subInputStream.Seek(streamPosition0 + symInRefSize); // needed if less
             }
         }
 
         private void DecodeNewSymbols(int symWidth, int hcHeight, Jbig2Bitmap ibo, int rdx, int rdy)
         {
-            if (genericRefinementRegion is null)
+            // cx (bitmap coding context) must already be initialized in GetDictionary(). It is
+            // required by GenericRefinementRegion and provides the arithmetic decoder statistics
+            // for bitmap decoding.
+            if (cx is null)
             {
-                genericRefinementRegion = new GenericRefinementRegion(subInputStream);
-
-                if (arithmeticDecoder is null)
-                {
-                    arithmeticDecoder = new ArithmeticDecoder(subInputStream);
-                }
-
-                if (cx is null)
-                {
-                    cx = new CX(65536, 1);
-                }
+                throw new InvalidOperationException("CX not initialized (bug in initialization order)");
             }
+
+            // arithmeticDecoder must already be initialized for the current bitstream context.
+            if (arithmeticDecoder is null)
+            {
+                throw new InvalidOperationException("ArithmeticDecoder not initialized");
+            }
+
+            genericRefinementRegion ??= new GenericRefinementRegion(subInputStream);
 
             // Parameters as shown in Table 18, page 36
             genericRefinementRegion.SetParameters(cx, arithmeticDecoder, sdrTemplate, symWidth,
@@ -772,13 +839,23 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
         private int[] GetToExportFlags()
         {
-            int currentExportFlag = 0;
-            int[] exportFlags = new int[amountOfImportedSymbolss + amountOfNewSymbols];
-
-            long exRunLength;
-            for (int exportIndex = 0; exportIndex < amountOfImportedSymbolss
-                    + amountOfNewSymbols; exportIndex += (int)exRunLength)
+            // the validation could be placed a little earlier but it is needed here before the array creation
+            if (amountOfImportedSymbolss < 0 || amountOfNewSymbols < 0
+                    || (long)amountOfImportedSymbolss + amountOfNewSymbols > int.MaxValue)
             {
+                throw new InvalidHeaderValueException("Invalid number of symbols: imported=" +
+                        amountOfImportedSymbolss + ", new=" + amountOfNewSymbols);
+            }
+
+            int exIndex = 0;
+            int curExFlag = 0;
+            int total = amountOfImportedSymbolss + amountOfNewSymbols;
+            int[] exportFlags = new int[total];
+
+            while (exIndex < total)
+            {
+                long exRunLength;
+
                 if (isHuffmanEncoded)
                 {
                     exRunLength = StandardTables.GetTable(1).Decode(subInputStream);
@@ -788,15 +865,18 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                     exRunLength = iDecoder.Decode(cxIAEX);
                 }
 
-                if (exRunLength != 0)
+                if (exRunLength < 0 || exRunLength > total - exIndex)
                 {
-                    for (int index = exportIndex; index < exportIndex + exRunLength; index++)
-                    {
-                        exportFlags[index] = currentExportFlag;
-                    }
+                    throw new InvalidHeaderValueException("Invalid EXRUNLENGTH: " + exRunLength);
                 }
 
-                currentExportFlag = currentExportFlag == 0 ? 1 : 0;
+                for (int i = exIndex; i < exIndex + exRunLength; i++)
+                {
+                    exportFlags[i] = curExFlag;
+                }
+
+                exIndex += (int)exRunLength;
+                curExFlag = curExFlag == 0 ? 1 : 0;
             }
 
             return exportFlags;
