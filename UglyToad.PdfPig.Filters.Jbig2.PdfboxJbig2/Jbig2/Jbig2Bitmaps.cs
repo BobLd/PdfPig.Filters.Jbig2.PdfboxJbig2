@@ -109,6 +109,8 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             int startLine = 0;
             int srcStartIdx = 0;
             int srcEndIdx = src.RowStride - 1;
+            int x1 = x;
+            int y1 = y;
 
             // Ignore those parts of the source bitmap which would be placed outside the target bitmap.
             if (x < 0)
@@ -138,6 +140,16 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
             int padding = src.Width & 0x07;
             int toShift = shiftVal2 - padding;
+
+            if ((shiftVal1 != 0 || padding != 0) &&
+                !(x1 == 0 && src.Width >= dst.Width))
+            {
+                // PDFBOX-6156: do it the hard way until the other methods are fixed.
+                // Not needed if both have the same size (or if src larger) and x starts at 0,
+                // but needed if start or end is not at a byte boundary.
+                BlitByPixel(src, dst, x1, y1, combinationOperator);
+                return;
+            }
 
             bool useShift = (shiftVal2 & 0x07) != 0;
             bool specialCase = src.Width <= (srcEndIdx - srcStartIdx << 3) + shiftVal2;
@@ -286,6 +298,30 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         oldByte = dst.GetByte(dstIdx);
                         dst.SetByte(dstIdx, CombineBytes(oldByte, newByte, op));
                     }
+                }
+            }
+        }
+
+        private static void BlitByPixel(Jbig2Bitmap src, Jbig2Bitmap dst, int xDstOffset, int yDstOffset,
+                CombinationOperator combinationOperator)
+        {
+            for (int y = 0; y < src.Height && yDstOffset + y < dst.Height; y++)
+            {
+                if (yDstOffset + y < 0)
+                {
+                    continue;
+                }
+
+                for (int x = 0; x < src.Width && xDstOffset + x < dst.Width; x++)
+                {
+                    if (xDstOffset + x < 0)
+                    {
+                        continue;
+                    }
+
+                    byte resultBit = CombineBytes(dst.GetPixel(xDstOffset + x, yDstOffset + y),
+                            src.GetPixel(x, y), combinationOperator);
+                    dst.SetPixel(xDstOffset + x, yDstOffset + y, resultBit);
                 }
             }
         }
