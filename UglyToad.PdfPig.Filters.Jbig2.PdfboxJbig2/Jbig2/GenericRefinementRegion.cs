@@ -43,7 +43,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             internal override void SetIndex(CX cx)
             {
                 // Figure 15, page 22
-                cx.Index = 0x080;
+                cx.Index = 0x008;
             }
         }
 
@@ -80,6 +80,9 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         // If true, AT pixels are not on their nominal location and have to be overridden.
         private bool isOverride;
         private bool[] grAtOverride;
+
+        // Used as GRREFERENCE when this segment refers to no other segment, 7.4.7.4
+        private Jbig2Bitmap pageBitmap;
 
         public GenericRefinementRegion()
         {
@@ -191,7 +194,18 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         isLineTypicalPredicted ^= DecodeSLTP();
                     }
 
-                    if (isLineTypicalPredicted == 0)
+                    if (templateID == 1)
+                    {
+                        if (isLineTypicalPredicted == 0)
+                        {
+                            DecodeLineExplicitT1(y, regionBitmap.Width);
+                        }
+                        else
+                        {
+                            DecodeLineTPGRT1(y, regionBitmap.Width);
+                        }
+                    }
+                    else if (isLineTypicalPredicted == 0)
                     {
                         // 6.3.5.6 - 3 c)
                         DecodeOptimized(y, regionBitmap.Width, regionBitmap.RowStride,
@@ -217,12 +231,110 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             return arithDecoder.Decode(cx);
         }
 
+        /// <summary>
+        /// Call this to pass the page bitmap in case there is no reference bitmap.
+        /// </summary>
+        public void SetPageBitmap(Jbig2Bitmap pageBitmap)
+        {
+            this.pageBitmap = pageBitmap;
+        }
+
         private Jbig2Bitmap GetGrReference()
         {
             SegmentHeader[] segments = segmentHeader.RtSegments;
+            if (segments is null)
+            {
+                if (CombinationOperator.REPLACE != RegionInfo.CombinationOperator)
+                {
+                    // 7.4.7.5 1) "If this segment does not refer to another region segment
+                    //             then its external combination operator must be REPLACE"
+                    throw new InvalidHeaderValueException("REPLACE combination operator expected");
+                }
+
+                // 7.4.7.4 Reference bitmap selection:
+                // If this segment does not refer to another region segment, set GRREFERENCE to be a bitmap
+                // containing the current contents of the page buffer (see clause 8), restricted to the area
+                // of the page buffer specified by this segment's region segment information field.
+                var roi = new Jbig2Rectangle(RegionInfo.X, RegionInfo.Y,
+                        RegionInfo.BitmapWidth, RegionInfo.BitmapHeight);
+                return Jbig2Bitmaps.Extract(roi, pageBitmap);
+            }
+
             IRegion region = (IRegion)segments[0].GetSegmentData();
 
             return region.GetRegionBitmap();
+        }
+
+        // -------------------------------------------------------------------------
+        // Template 1 context formation - 6.3.5.6, Figure 13
+        // Pixels gathered in reading order, GRREG before GRREFERENCE:
+        //   GRREG:      (x-2,y-1) (x-1,y-1) (x,y-1) (x-1,y)           -> bits 9-6
+        //   GRREFERENCE:(x,y-1) (x-1,y) (x,y) (x+1,y) (x,y+1) (x+1,y+1) -> bits 5-0
+        // -------------------------------------------------------------------------
+
+        private int BuildContextT1(int x, int y)
+        {
+            return (GetPixel(regionBitmap, x - 1, y - 1) << 9)
+                | (GetPixel(regionBitmap, x, y - 1) << 8)
+                | (GetPixel(regionBitmap, x + 1, y - 1) << 7)
+                | (GetPixel(regionBitmap, x - 1, y) << 6)
+                | (GetPixel(referenceBitmap, x - referenceDX, y - 1 - referenceDY) << 5)
+                | (GetPixel(referenceBitmap, x - 1 - referenceDX, y - referenceDY) << 4)
+                | (GetPixel(referenceBitmap, x - referenceDX, y - referenceDY) << 3)
+                | (GetPixel(referenceBitmap, x + 1 - referenceDX, y - referenceDY) << 2)
+                | (GetPixel(referenceBitmap, x - referenceDX, y + 1 - referenceDY) << 1)
+                | GetPixel(referenceBitmap, x + 1 - referenceDX, y + 1 - referenceDY);
+        }
+
+        // -------------------------------------------------------------------------
+        // Template 1 - explicit decode (LTP=0 path, 6.3.5.6 step 3c)
+        // -------------------------------------------------------------------------
+
+        private void DecodeLineExplicitT1(int y, int width)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                cx.Index = BuildContextT1(x, y);
+                regionBitmap.SetPixel(x, y, (byte)arithDecoder.Decode(cx));
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // Template 1 - typical prediction decode (LTP=1 path, 6.3.5.6 step 3d)
+        // TPGRPIX=1 when the 3x3 reference neighbourhood is uniform (6.3.5.6 3d-i)
+        // -------------------------------------------------------------------------
+
+        private void DecodeLineTPGRT1(int y, int width)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int center = GetPixel(referenceBitmap, x - referenceDX, y - referenceDY);
+                bool uniform = true;
+
+                for (int dy = -1; dy <= 1 && uniform; dy++)
+                {
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (GetPixel(referenceBitmap, x + dx - referenceDX, y + dy - referenceDY) != center)
+                        {
+                            uniform = false;
+                            break;
+                        }
+                    }
+                }
+
+                int bit;
+                if (uniform)
+                {
+                    bit = center;
+                }
+                else
+                {
+                    cx.Index = BuildContextT1(x, y);
+                    bit = arithDecoder.Decode(cx);
+                }
+                regionBitmap.SetPixel(x, y, (byte)bit);
+            }
         }
 
         private void DecodeOptimized(int lineNumber, int width, int rowStride,
@@ -237,17 +349,10 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
             int byteIndex = regionBitmap.GetByteIndex(Math.Max(0, referenceDX), lineNumber);
 
-            switch (templateID)
-            {
-                case 0:
-                    DecodeTemplate(lineNumber, width, rowStride, refRowStride, paddedWidth, deltaRefStride,
-                            lineOffset, byteIndex, currentLine, referenceByteIndex, T0);
-                    break;
-                case 1:
-                    DecodeTemplate(lineNumber, width, rowStride, refRowStride, paddedWidth, deltaRefStride,
-                            lineOffset, byteIndex, currentLine, referenceByteIndex, T1);
-                    break;
-            }
+            // Template 1 uses the pixel-by-pixel implementation (DecodeLineExplicitT1 /
+            // DecodeLineTPGRT1); only template 0 reaches this optimized byte-packed path.
+            DecodeTemplate(lineNumber, width, rowStride, refRowStride, paddedWidth, deltaRefStride,
+                    lineOffset, byteIndex, currentLine, referenceByteIndex, T0);
         }
 
         private void DecodeTemplate(int lineNumber, int width, int rowStride,
@@ -477,13 +582,13 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             switch (templateID)
             {
                 case 0:
-                    if (grAtX[0] != -1 && grAtY[0] != -1)
+                    if (!(grAtX[0] == -1 && grAtY[0] == -1))
                     {
                         grAtOverride[0] = true;
                         isOverride = true;
                     }
 
-                    if (grAtX[1] != -1 && grAtY[1] != -1)
+                    if (!(grAtX[1] == -1 && grAtY[1] == -1))
                     {
                         grAtOverride[1] = true;
                         isOverride = true;
@@ -507,17 +612,10 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
             int byteIndex = regionBitmap.GetByteIndex(0, lineNumber);
 
-            switch (templateID)
-            {
-                case 0:
-                    DecodeTypicalPredictedLineTemplate0(lineNumber, width, rowStride, refRowStride,
-                            paddedWidth, deltaRefStride, byteIndex, currentLine, refByteIndex);
-                    break;
-                case 1:
-                    DecodeTypicalPredictedLineTemplate1(lineNumber, width, rowStride, refRowStride,
-                            paddedWidth, deltaRefStride, byteIndex, currentLine, refByteIndex);
-                    break;
-            }
+            // Template 1 uses the pixel-by-pixel implementation (DecodeLineExplicitT1 /
+            // DecodeLineTPGRT1); only template 0 reaches this optimized byte-packed path.
+            DecodeTypicalPredictedLineTemplate0(lineNumber, width, rowStride, refRowStride,
+                    paddedWidth, deltaRefStride, byteIndex, currentLine, refByteIndex);
         }
 
         private void DecodeTypicalPredictedLineTemplate0(int lineNumber, int width,
@@ -645,137 +743,6 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                     result = (byte)(result | bit << toShift);
 
                     context = (context & 0xdb6) << 1 | bit | previousLine >> toShift + 5 & 0x002
-                            | nextReferenceLine >> toShift + 2 & 0x010
-                            | currentReferenceLine >> toShift & 0x080
-                            | previousReferenceLine >> toShift & 0x400;
-                }
-                regionBitmap.SetByte(byteIndex++, result);
-                refByteIndex++;
-            }
-        }
-
-        private void DecodeTypicalPredictedLineTemplate1(int lineNumber, int width,
-                int rowStride, int refRowStride, int paddedWidth,
-                int deltaRefStride, int byteIndex, int currentLine, int refByteIndex)
-        {
-            int context;
-            int grReferenceValue;
-
-            int previousLine;
-            int previousReferenceLine;
-            int currentReferenceLine;
-            int nextReferenceLine;
-
-            if (lineNumber > 0)
-            {
-                previousLine = regionBitmap.GetByteAsInteger(byteIndex - rowStride);
-            }
-            else
-            {
-                previousLine = 0;
-            }
-
-            if (currentLine > 0 && currentLine <= referenceBitmap.Height)
-            {
-                previousReferenceLine = referenceBitmap
-                        .GetByteAsInteger(byteIndex - refRowStride + deltaRefStride) << 2;
-            }
-            else
-            {
-                previousReferenceLine = 0;
-            }
-
-            if (currentLine >= 0 && currentLine < referenceBitmap.Height)
-            {
-                currentReferenceLine = referenceBitmap.GetByteAsInteger(byteIndex + deltaRefStride);
-            }
-            else
-            {
-                currentReferenceLine = 0;
-            }
-
-            if (currentLine > -2 && currentLine < referenceBitmap.Height - 1)
-            {
-                nextReferenceLine = referenceBitmap
-                        .GetByteAsInteger(byteIndex + refRowStride + deltaRefStride);
-            }
-            else
-            {
-                nextReferenceLine = 0;
-            }
-
-            context = previousLine >> 5 & 0x6 | nextReferenceLine >> 2 & 0x30
-                    | currentReferenceLine & 0xc0 | previousReferenceLine & 0x200;
-
-            grReferenceValue = nextReferenceLine >> 2 & 0x70 | currentReferenceLine & 0xc0
-                    | previousReferenceLine & 0x700;
-
-            int nextByte;
-            for (int x = 0; x < paddedWidth; x = nextByte)
-            {
-                byte result = 0;
-                nextByte = x + 8;
-                int minorWidth = width - x > 8 ? 8 : width - x;
-                bool readNextByte = nextByte < width;
-                bool refReadNextByte = nextByte < referenceBitmap.Width;
-
-                int yOffset = deltaRefStride + 1;
-
-                if (lineNumber > 0)
-                {
-                    previousLine = previousLine << 8 | (readNextByte
-                            ? regionBitmap.GetByteAsInteger(byteIndex - rowStride + 1) : 0);
-                }
-
-                if (currentLine > 0 && currentLine <= referenceBitmap.Height)
-                {
-                    previousReferenceLine = previousReferenceLine << 8
-                            | (refReadNextByte ? referenceBitmap
-                                    .GetByteAsInteger(refByteIndex - refRowStride + yOffset) << 2 : 0);
-                }
-
-                if (currentLine >= 0 && currentLine < referenceBitmap.Height)
-                {
-                    currentReferenceLine = currentReferenceLine << 8 | (refReadNextByte
-                            ? referenceBitmap.GetByteAsInteger(refByteIndex + yOffset) : 0);
-                }
-
-                if (currentLine > -2 && currentLine < referenceBitmap.Height - 1)
-                {
-                    nextReferenceLine = nextReferenceLine << 8 | (refReadNextByte
-                            ? referenceBitmap.GetByteAsInteger(refByteIndex + refRowStride + yOffset)
-                            : 0);
-                }
-
-                for (int minorX = 0; minorX < minorWidth; minorX++)
-                {
-                    // i)
-                    int bitmapValue = grReferenceValue >> 4 & 0x1ff;
-
-                    int bit;
-                    if (bitmapValue == 0x1ff)
-                    {
-                        bit = 1;
-                    }
-                    else if (bitmapValue == 0x00)
-                    {
-                        bit = 0;
-                    }
-                    else
-                    {
-                        cx.Index = context;
-                        bit = arithDecoder.Decode(cx);
-                    }
-
-                    int toShift = 7 - minorX;
-                    result = (byte)(result | bit << toShift);
-
-                    context = (context & 0x0d6) << 1 | bit | previousLine >> toShift + 5 & 0x002
-                            | nextReferenceLine >> toShift + 2 & 0x010
-                            | currentReferenceLine >> toShift & 0x040
-                            | previousReferenceLine >> toShift & 0x200;
-
-                    grReferenceValue = (grReferenceValue & 0x0db) << 1
                             | nextReferenceLine >> toShift + 2 & 0x010
                             | currentReferenceLine >> toShift & 0x080
                             | previousReferenceLine >> toShift & 0x400;

@@ -72,8 +72,8 @@
 
         private void ReadPatternWidthAndHeight()
         {
-            HdpWidth = (sbyte)subInputStream.ReadByte();
-            HdpHeight = (sbyte)subInputStream.ReadByte();
+            HdpWidth = (short)subInputStream.ReadByte();
+            HdpHeight = (short)subInputStream.ReadByte();
         }
 
         private void ReadGrayMax()

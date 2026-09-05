@@ -41,5 +41,23 @@
         {
             mps[Index] ^= 1;
         }
+
+        /// <summary>
+        /// Creates and returns a deep copy of this <see cref="CX"/> instance.
+        /// The new instance will have the same context values, probability estimates,
+        /// and current index as this object, but will be a separate instance.
+        /// Changes to the copied object will not affect the original, and vice versa.
+        /// <para>
+        /// This is required when reusing arithmetic coding contexts across segments,
+        /// to avoid sharing mutable probability state between decoders.
+        /// </para>
+        /// </summary>
+        public CX Copy()
+        {
+            var result = new CX(cx.Length, Index);
+            System.Array.Copy(cx, result.cx, cx.Length);
+            System.Array.Copy(mps, result.mps, mps.Length);
+            return result;
+        }
     }
 }

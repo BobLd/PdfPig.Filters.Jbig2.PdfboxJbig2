@@ -96,7 +96,12 @@
 
                 int toRead = (int)Math.Min(len, Length - Position);
                 int read = wrappedStream.Read(b.Slice(off, toRead));
-                streamPosition += read;
+
+                // only advance the stream position if we are not at EOF
+                if (read > 0)
+                {
+                    streamPosition += read;
+                }
 
                 return read;
             }
@@ -131,7 +136,10 @@
                 bufferBase = streamPosition;
                 int toRead = (int)Math.Min(buffer.Length, Length - streamPosition);
                 int read = wrappedStream.Read(buffer, 0, toRead);
-                bufferTop = bufferBase + read;
+                if (read > 0)
+                {
+                    bufferTop = bufferBase + read;
+                }
 
                 return read > 0;
             }

@@ -139,7 +139,10 @@
             }
 
             bitOffset = 0;
-            Seek(Position + 1);
+            if (Position < Length)
+            {
+                Seek(Position + 1);
+            }
         }
 
         /// <inheritdoc />

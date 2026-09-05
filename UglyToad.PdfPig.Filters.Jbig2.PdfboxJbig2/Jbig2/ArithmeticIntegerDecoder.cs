@@ -7,8 +7,6 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
     {
         private readonly ArithmeticDecoder decoder;
 
-        private int prev;
-
         public ArithmeticIntegerDecoder(ArithmeticDecoder decoder)
         {
             this.decoder = decoder;
@@ -21,6 +19,12 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         /// <returns>Decoded value.</returns>
         public long Decode(CX cxIAx)
         {
+            // A.2.
+            // CX is identified by … the rightmost 9 bits of PREV
+            // ... Thus, PREV always contains the values of the eight most-recently-decoded bits,
+            // plus a leading 1 bit, which is used to indicate the number of bits decoded so far.
+            int prev = 1;
+
             int v = 0;
             int d, s;
 
@@ -32,39 +36,37 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 cxIAx = new CX(512, 1);
             }
 
-            prev = 1;
-
-            cxIAx.Index = prev;
+            cxIAx.Index = prev & 0x1FF;
             s = decoder.Decode(cxIAx);
-            SetPrev(s);
+            prev = SetPrev(prev, s);
 
-            cxIAx.Index = prev;
+            cxIAx.Index = prev & 0x1FF;
             d = decoder.Decode(cxIAx);
-            SetPrev(d);
+            prev = SetPrev(prev, d);
 
             if (d == 1)
             {
-                cxIAx.Index = prev;
+                cxIAx.Index = prev & 0x1FF;
                 d = decoder.Decode(cxIAx);
-                SetPrev(d);
+                prev = SetPrev(prev, d);
 
                 if (d == 1)
                 {
-                    cxIAx.Index = prev;
+                    cxIAx.Index = prev & 0x1FF;
                     d = decoder.Decode(cxIAx);
-                    SetPrev(d);
+                    prev = SetPrev(prev, d);
 
                     if (d == 1)
                     {
-                        cxIAx.Index = prev;
+                        cxIAx.Index = prev & 0x1FF;
                         d = decoder.Decode(cxIAx);
-                        SetPrev(d);
+                        prev = SetPrev(prev, d);
 
                         if (d == 1)
                         {
-                            cxIAx.Index = prev;
+                            cxIAx.Index = prev & 0x1FF;
                             d = decoder.Decode(cxIAx);
-                            SetPrev(d);
+                            prev = SetPrev(prev, d);
 
                             if (d == 1)
                             {
@@ -103,9 +105,9 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
             for (int i = 0; i < bitsToRead; i++)
             {
-                cxIAx.Index = prev;
+                cxIAx.Index = prev & 0x1FF;
                 d = decoder.Decode(cxIAx);
-                SetPrev(d);
+                prev = SetPrev(prev, d);
                 v = v << 1 | d;
             }
 
@@ -133,20 +135,26 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         public int DecodeIAID(CX cxIAID, long symCodeLen)
         {
             // A.3 1)
-            prev = 1;
+            long prev = 1;
 
             // A.3 2)
+            // The spec says: "the rightmost SBSYMCODELEN + 1 bits of PREV are used"
+            // But also: "The number of contexts required is 2^SBSYMCODELEN"
+            // The resolution: the leading 1 bit is not used for context
+            // identification—only the lower N bits are.
+            long mask = (1L << (int)symCodeLen) - 1;
+
             for (int i = 0; i < symCodeLen; i++)
             {
-                cxIAID.Index = prev;
+                cxIAID.Index = (int)(prev & mask);
                 prev = prev << 1 | decoder.Decode(cxIAID);
             }
 
             // A.3 3) & 4)
-            return prev - (1 << (int)symCodeLen);
+            return (int)(prev - (1L << (int)symCodeLen));
         }
 
-        private void SetPrev(int bit)
+        private static int SetPrev(int prev, int bit)
         {
             if (prev < 256)
             {
@@ -156,6 +164,8 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             {
                 prev = ((prev << 1 | bit) & 511 | 256) & 0x1ff;
             }
+
+            return prev;
         }
     }
 }
