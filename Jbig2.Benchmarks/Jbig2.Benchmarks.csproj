@@ -14,7 +14,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Jbig2FilterVersion)' == 'Latest'">
-		<PackageReference Include="PdfPig.Filters.Jbig2.PdfboxJbig2" Version="0.1.16" />
+		<PackageReference Include="PdfPig.Filters.Jbig2.PdfboxJbig2" Version="0.1.16.1" />
 	</ItemGroup>
 	
 	<ItemGroup>

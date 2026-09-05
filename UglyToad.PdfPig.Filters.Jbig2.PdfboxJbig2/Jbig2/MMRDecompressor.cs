@@ -268,8 +268,8 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             }
         }
 
-        private static int Uncompress2D(RunData runData, int[] referenceOffsets, int refRunLength,
-            int[] runOffsets, int width)
+        private static int Uncompress2D(RunData runData, Span<int> referenceOffsets, int refRunLength,
+            Span<int> runOffsets, int width)
         {
             int referenceBufferOffset = 0;
             int currentBufferOffset = 0;
@@ -502,8 +502,21 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         {
             Jbig2Bitmap result = new Jbig2Bitmap(width, height);
 
-            int[] currentOffsets = new int[width + 5];
-            int[] referenceOffsets = new int[width + 5];
+            // Two scratch rows of run offsets, swapped after every line. The width comes from the segment
+            // header, so keep the stack path for the common page widths and fall back to the heap for
+            // anything larger rather than trusting the stream with the stack.
+            int offsetCount = width + 5;
+            const int MaxStackOffsets = 2048;
+            bool onStack = offsetCount <= MaxStackOffsets;
+
+            Span<int> currentBuffer = onStack ? stackalloc int[MaxStackOffsets] : new int[offsetCount];
+            Span<int> referenceBuffer = onStack ? stackalloc int[MaxStackOffsets] : new int[offsetCount];
+
+            Span<int> currentOffsets = currentBuffer.Slice(0, offsetCount);
+            Span<int> referenceOffsets = referenceBuffer.Slice(0, offsetCount);
+            currentOffsets.Clear();
+            referenceOffsets.Clear();
+
             referenceOffsets[0] = width;
             int refRunLength = 1;
 
@@ -524,7 +537,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 }
 
                 // Swap lines
-                int[] tempOffsets = referenceOffsets;
+                Span<int> tempOffsets = referenceOffsets;
                 referenceOffsets = currentOffsets;
                 currentOffsets = tempOffsets;
                 refRunLength = count;
@@ -553,7 +566,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             }
         }
 
-        private static void FillBitmap(Jbig2Bitmap result, int line, int[] currentOffsets, int count)
+        private static void FillBitmap(Jbig2Bitmap result, int line, Span<int> currentOffsets, int count)
         {
             int x = 0;
             int targetByte = result.GetByteIndex(0, line);
@@ -593,7 +606,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             }
         }
 
-        private static int Uncompress1D(RunData runData, int[] runOffsets, int width)
+        private static int Uncompress1D(RunData runData, Span<int> runOffsets, int width)
         {
             bool whiteRun = true;
             int iBitPos = 0;

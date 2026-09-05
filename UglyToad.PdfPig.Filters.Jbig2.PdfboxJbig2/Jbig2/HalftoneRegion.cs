@@ -152,7 +152,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 int bitsPerValue = (int)Math.Ceiling(Math.Log(patterns.Count) / log2);
 
                 // 4)
-                int[][] grayScaleValues = GrayScaleDecoding(bitsPerValue, hSkip);
+                int[] grayScaleValues = GrayScaleDecoding(bitsPerValue, hSkip);
 
                 // 5), rendering the pattern, described in 6.6.5.2
                 RenderPattern(grayScaleValues);
@@ -164,11 +164,13 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         /// <summary>
         /// This method draws the pattern into the region bitmap({ @code htReg}), as described in 6.6.5.2, page 42
         /// </summary>
-        private void RenderPattern(int[][] grayScaleValues)
+        private void RenderPattern(int[] grayScaleValues)
         {
             // 1)
             for (int m = 0; m < HGridHeight; m++)
             {
+                int rowOffset = m * HGridWidth;
+
                 // a)
                 for (int n = 0; n < HGridWidth; n++)
                 {
@@ -177,7 +179,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                     var y = ComputeY(m, n);
 
                     // ii)
-                    Jbig2Bitmap patternJbig2Bitmap = patterns[grayScaleValues[m][n]];
+                    Jbig2Bitmap patternJbig2Bitmap = patterns[grayScaleValues[rowOffset + n]];
                     Jbig2Bitmaps.Blit(patternJbig2Bitmap, halftoneRegionBitmap, x, y,
                             HCombinationOperator);
                 }
@@ -202,7 +204,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         /// Gray-scale image decoding procedure is special for halftone region decoding
         /// and is described in Annex C.5 on page 98.
         /// </summary>
-        private int[][] GrayScaleDecoding(int bitsPerValue, Jbig2Bitmap hSkip)
+        private int[] GrayScaleDecoding(int bitsPerValue, Jbig2Bitmap hSkip)
         {
             short[] gbAtX = null;
             short[] gbAtY = null;
@@ -273,18 +275,21 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             return grayScalePlanes;
         }
 
-        private int[][] ComputeGrayScaleValues(Jbig2Bitmap[] grayScalePlanes, int bitsPerValue)
+        /// <summary>
+        /// Returns the HGridHeight by HGridWidth grid of gray-scale values as a single row major array,
+        /// indexed as <c>y * HGridWidth + x</c>. It used to be a jagged array, which cost one heap
+        /// allocation per grid row on top of the outer array.
+        /// </summary>
+        private int[] ComputeGrayScaleValues(Jbig2Bitmap[] grayScalePlanes, int bitsPerValue)
         {
             // Gray-scale decoding procedure, page 98
-            int[][] grayScaleValues = new int[HGridHeight][];
-            for (int i = 0; i < grayScaleValues.Length; i++)
-            {
-                grayScaleValues[i] = new int[HGridWidth];
-            }
+            int[] grayScaleValues = new int[HGridHeight * HGridWidth];
 
             // 4)
             for (int y = 0; y < HGridHeight; y++)
             {
+                int rowOffset = y * HGridWidth;
+
                 for (int x = 0; x < HGridWidth; x += 8)
                 {
                     int minorWidth = HGridWidth - x > 8 ? 8 : HGridWidth - x;
@@ -293,13 +298,15 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                     for (int minorX = 0; minorX < minorWidth; minorX++)
                     {
                         int i = minorX + x;
-                        grayScaleValues[y][i] = 0;
+                        int value = 0;
 
                         for (int j = 0; j < bitsPerValue; j++)
                         {
-                            grayScaleValues[y][i] += (grayScalePlanes[j]
+                            value += (grayScalePlanes[j]
                                     .GetByte(byteIndex) >> (7 - i & 7) & 1) * (1 << j);
                         }
+
+                        grayScaleValues[rowOffset + i] = value;
                     }
                 }
             }

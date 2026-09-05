@@ -80,14 +80,29 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 maxPrefixLength = Math.Max(maxPrefixLength, c.PrefixLength);
             }
 
-            var lenCount = new int[maxPrefixLength + 1]; // TODO - stackalloc? (max 32)
+            // Prefix lengths are at most 32 in a well formed table, but the value is read straight from
+            // the stream, so only take the stack path when it is actually within that bound.
+            const int MaxStackPrefixLength = 32;
+            bool onStack = maxPrefixLength <= MaxStackPrefixLength;
+
+            Span<int> lenCountBuffer = onStack
+                ? stackalloc int[MaxStackPrefixLength + 1]
+                : new int[maxPrefixLength + 1];
+            Span<int> lenCount = lenCountBuffer.Slice(0, maxPrefixLength + 1);
+            lenCount.Clear();
+
             foreach (Code c in codeTable)
             {
                 lenCount[c.PrefixLength]++;
             }
 
             int curCode;
-            var firstCode = new int[lenCount.Length + 1]; // TODO - stackalloc? (max 32)
+            Span<int> firstCodeBuffer = onStack
+                ? stackalloc int[MaxStackPrefixLength + 2]
+                : new int[lenCount.Length + 1];
+            Span<int> firstCode = firstCodeBuffer.Slice(0, lenCount.Length + 1);
+            firstCode.Clear();
+
             lenCount[0] = 0;
 
             // Annex B.3 3)
