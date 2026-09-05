@@ -181,6 +181,12 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 }
             }
 
+            // Abort if first page isn't 1, however a purely empty document is valid.
+            if (pages.Count != 0 && !pages.ContainsKey(1))
+            {
+                throw new System.IO.IOException("Page 1 missing");
+            }
+
             // Random organization: segment headers are finished. Data part starts and the offset can be set.
             DetermineRandomDataOffsets(segments, offset);
         }
