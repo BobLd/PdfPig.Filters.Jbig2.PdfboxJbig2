@@ -15,6 +15,10 @@
             bitmap.SetPixel(3, 19, 1);
 
             Assert.Equal(1, bitmap.GetPixel(3, 19));
+
+            bitmap.SetPixel(3, 19, 0);
+
+            Assert.Equal(0, bitmap.GetPixel(3, 19));
         }
 
         [Fact]
@@ -63,6 +67,16 @@
             Assert.Equal(integerValue, bitmap.GetByteAsInteger(0));
             Assert.Equal(integerValue, bitmap.GetByteAsInteger(31));
 
+        }
+
+        [Fact]
+        public void GetByteAsIntegerThrowsExceptionTest()
+        {
+            var bitmap = new Jbig2Bitmap(16, 16);
+
+            Action action = () => bitmap.GetByteAsInteger(32);
+
+            Assert.Throws<IndexOutOfRangeException>(action);
         }
 
         [Fact]
