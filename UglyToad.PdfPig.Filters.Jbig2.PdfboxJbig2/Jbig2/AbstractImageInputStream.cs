@@ -10,6 +10,16 @@
 
         private int bitOffset;
 
+        /// <summary>
+        /// The byte the bit reader is currently handing out bits from, and the stream position it was
+        /// read from. Reading the eight bits of one byte used to pull that byte from the underlying
+        /// stream eight times, rewinding after each one; the stream content does not change while
+        /// decoding, so remembering it makes seven of those reads unnecessary.
+        /// </summary>
+        private long cachedBytePosition = -1;
+
+        private int cachedByte;
+
         /// <inheritdoc />
         public abstract long Length { get; }
 
@@ -34,21 +44,38 @@
         /// <inheritdoc />
         public int ReadBit()
         {
-            var savedBitOffset = bitOffset;
-            var b = ReadByte();
-            SetBitOffset(savedBitOffset);
+            long position = Position;
+            int offset = bitOffset;
+            int b;
 
-            var bit = (b & 1 << 7 - bitOffset) != 0;
-
-            bitOffset = (bitOffset + 1) % 8;
-
-            // Rewind if we're still processing the byte
-            if (bitOffset > 0)
+            if (offset != 0 && cachedBytePosition == position)
             {
-                Seek(Position - 1);
+                // Still working through a byte we have already read.
+                b = cachedByte;
+            }
+            else
+            {
+                b = ReadByte(); // advances the stream past the byte
+                cachedByte = b;
+                cachedBytePosition = position;
+
+                if (offset != 7)
+                {
+                    // More bits of this byte still to come, so leave the position on it.
+                    Seek(position);
+                }
             }
 
-            return (byte)(bit ? 1 : 0);
+            if (offset == 7 && Position == position)
+            {
+                // Last bit of a cached byte: step over it.
+                Seek(position + 1);
+            }
+
+            // Assigned after any Seek, because seeking is allowed to reset the bit offset.
+            bitOffset = offset + 1 & 7;
+
+            return b >> 7 - offset & 1;
         }
 
         /// <inheritdoc />
