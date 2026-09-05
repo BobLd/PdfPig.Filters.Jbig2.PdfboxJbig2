@@ -39,6 +39,9 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
         private MMRDecompressor mmrDecompressor;
 
+        private bool useSkip;
+        private Jbig2Bitmap hSkip;
+
         // Region segment information field, 7.4.1
         public RegionSegmentInformation RegionInfo { get; private set; }
 
@@ -181,19 +184,8 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         }
                         else
                         {
-                            // 3 d)
-                            // NOT USED ATM - If corresponding pixel of SKIP bitmap is 0, set
-                            // current pixel to 0. Something like that:
-                            // if (useSkip) {
-                            // for (int i = 1; i < rowstride; i++) {
-                            // if (skip[pixel] == 1) {
-                            // gbReg[pixel] = 0;
-                            // }
-                            // pixel++;
-                            // }
-                            // } else {
+                            // 6.2.5.7 - 3 d)
                             DecodeLine(line, regionBitmap.Width, regionBitmap.RowStride, paddedWidth);
-                            // }
                         }
                     }
                 }
@@ -324,7 +316,15 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         cx.Index = context;
                     }
 
-                    int bit = arithDecoder.Decode(cx);
+                    int bit;
+                    if (useSkip && hSkip.GetPixel(x + minorX, lineNumber) == 1)
+                    {
+                        bit = 0;
+                    }
+                    else
+                    {
+                        bit = arithDecoder.Decode(cx);
+                    }
 
                     result = (byte)(result | bit << toShift);
 
@@ -392,7 +392,15 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         cx.Index = context;
                     }
 
-                    int bit = arithDecoder.Decode(cx);
+                    int bit;
+                    if (useSkip && hSkip.GetPixel(x + minorX, lineNumber) == 1)
+                    {
+                        bit = 0;
+                    }
+                    else
+                    {
+                        bit = arithDecoder.Decode(cx);
+                    }
 
                     result = (byte)(result | bit << toShift);
 
@@ -459,7 +467,15 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         cx.Index = context;
                     }
 
-                    int bit = arithDecoder.Decode(cx);
+                    int bit;
+                    if (useSkip && hSkip.GetPixel(x + minorX, lineNumber) == 1)
+                    {
+                        bit = 0;
+                    }
+                    else
+                    {
+                        bit = arithDecoder.Decode(cx);
+                    }
 
                     result = (byte)(result | bit << 7 - minorX);
 
@@ -527,7 +543,15 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         cx.Index = context;
                     }
 
-                    int bit = arithDecoder.Decode(cx);
+                    int bit;
+                    if (useSkip && hSkip.GetPixel(x + minorX, lineNumber) == 1)
+                    {
+                        bit = 0;
+                    }
+                    else
+                    {
+                        bit = arithDecoder.Decode(cx);
+                    }
 
                     result = (byte)(result | bit << 7 - minorX);
 
@@ -583,7 +607,15 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                         cx.Index = context;
                     }
 
-                    int bit = arithDecoder.Decode(cx);
+                    int bit;
+                    if (useSkip && hSkip.GetPixel(x + minorX, lineNumber) == 1)
+                    {
+                        bit = 0;
+                    }
+                    else
+                    {
+                        bit = arithDecoder.Decode(cx);
+                    }
 
                     result = (byte)(result | bit << 7 - minorX);
                     context = (context & 0x1f7) << 1 | bit | line1 >> 8 - minorX & 0x010;
@@ -1052,6 +1084,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             }
 
             mmrDecompressor = null;
+            this.useSkip = useSkip;
             ResetBitmap();
         }
 
@@ -1070,7 +1103,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         /// <param name="gbAtY">y values of gbA pixels</param>
         internal void SetParameters(bool isMMREncoded, long dataOffset,
                     long dataLength, int gbh, int gbw, byte gbTemplate,
-                    bool isTPGDon, bool useSkip, short[] gbAtX, short[] gbAtY)
+                    bool isTPGDon, bool useSkip, Jbig2Bitmap hSkip, short[] gbAtX, short[] gbAtY)
         {
             this.dataOffset = dataOffset;
             this.dataLength = dataLength;
@@ -1082,6 +1115,8 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             IsTPGDon = isTPGDon;
             GbAtX = gbAtX;
             GbAtY = gbAtY;
+            this.useSkip = useSkip;
+            this.hSkip = hSkip;
         }
 
         /// <summary>

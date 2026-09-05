@@ -114,7 +114,7 @@
                 // 2)
                 GenericRegion genericRegion = new GenericRegion(subInputStream);
                 genericRegion.SetParameters(IsMMREncoded, dataOffset, dataLength, HdpHeight,
-                        (GrayMax + 1) * HdpWidth, HdTemplate, false, false, gbAtX, gbAtY);
+                        (GrayMax + 1) * HdpWidth, HdTemplate, false, false, null, gbAtX, gbAtY);
 
                 Jbig2Bitmap collectiveBitmap = genericRegion.GetRegionBitmap();
 

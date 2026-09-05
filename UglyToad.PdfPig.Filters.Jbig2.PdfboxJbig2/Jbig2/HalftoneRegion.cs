@@ -139,22 +139,20 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                     halftoneRegionBitmap.ByteArray.AsSpan().Fill(0xff);
                 }
 
-                // 2)
-                // 6.6.5.1 Computing hSkip - At the moment SKIP is not used... we are not able to test it.
-                // Bitmap hSkip;
-                // if (hSkipEnabled) {
-                // int hPatternHeight = (int) hPats.get(0).getHeight();
-                // int hPatternWidth = (int) hPats.get(0).getWidth();
-                // Implementation could be achieved like this: Set or get pattern width and height from
-                // referred pattern segments. The method is called like this:
-                // hSkip = computeHSkip(hPatternHeight, hPatternWidth);
-                // }
+                // 2) 6.6.5.1 Computing HSKIP
+                Jbig2Bitmap hSkip = null;
+                if (HSkipEnabled)
+                {
+                    int hPatternHeight = patterns[0].Height;
+                    int hPatternWidth = patterns[0].Width;
+                    hSkip = ComputeHSkip(hPatternWidth, hPatternHeight);
+                }
 
                 // 3)
                 int bitsPerValue = (int)Math.Ceiling(Math.Log(patterns.Count) / log2);
 
                 // 4)
-                int[][] grayScaleValues = GrayScaleDecoding(bitsPerValue);
+                int[][] grayScaleValues = GrayScaleDecoding(bitsPerValue, hSkip);
 
                 // 5), rendering the pattern, described in 6.6.5.2
                 RenderPattern(grayScaleValues);
@@ -180,7 +178,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
                     // ii)
                     Jbig2Bitmap patternJbig2Bitmap = patterns[grayScaleValues[m][n]];
-                    Jbig2Bitmaps.Blit(patternJbig2Bitmap, halftoneRegionBitmap, x + HGridX, y + HGridY,
+                    Jbig2Bitmaps.Blit(patternJbig2Bitmap, halftoneRegionBitmap, x, y,
                             HCombinationOperator);
                 }
             }
@@ -204,7 +202,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         /// Gray-scale image decoding procedure is special for halftone region decoding
         /// and is described in Annex C.5 on page 98.
         /// </summary>
-        private int[][] GrayScaleDecoding(int bitsPerValue)
+        private int[][] GrayScaleDecoding(int bitsPerValue, Jbig2Bitmap hSkip)
         {
             short[] gbAtX = null;
             short[] gbAtY = null;
@@ -237,7 +235,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
             // 1)
             var genericRegion = new GenericRegion(subInputStream);
             genericRegion.SetParameters(IsMMREncoded, dataOffset, dataLength, HGridHeight, HGridWidth,
-                    HTemplate, false, HSkipEnabled, gbAtX, gbAtY);
+                    HTemplate, false, HSkipEnabled, hSkip, gbAtX, gbAtY);
 
             // 2)
             int j = bitsPerValue - 1;
@@ -311,32 +309,35 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 
         private int ComputeX(int m, int n)
         {
-            return ShiftAndFill(HGridX + m * HRegionY + n * HRegionX);
+            return (HGridX + m * HRegionY + n * HRegionX) >> 8;
         }
 
         private int ComputeY(int m, int n)
         {
-            return ShiftAndFill(HGridY + m * HRegionX - n * HRegionY);
+            return (HGridY + m * HRegionX - n * HRegionY) >> 8;
         }
 
-        private static int ShiftAndFill(int value)
+        // 6.6.5.1 Computing HSKIP
+        private Jbig2Bitmap ComputeHSkip(int hPatternWidth, int hPatternHeight)
         {
-            // shift value by 8 and let the leftmost 8 bits be 0
-            value >>= 8;
-
-            if (value < 0)
+            // HSKIP is HGW by HGH pixels
+            var bitmap = new Jbig2Bitmap(HGridWidth, HGridHeight);
+            for (int m = 0; m < HGridHeight; m++)
             {
-                // fill the leftmost 8 bits with 1
-                int bitPosition = (int)(Math.Log(value.HighestOneBit()) / log2);
-
-                for (int i = 1; i < 31 - bitPosition; i++)
+                for (int n = 0; n < HGridWidth; n++)
                 {
-                    // bit flip
-                    value |= 1 << 31 - i;
+                    int x = ComputeX(m, n);
+                    int y = ComputeY(m, n);
+
+                    if (x + hPatternWidth <= 0 || x >= halftoneRegionBitmap.Width
+                        || y + hPatternHeight <= 0 || y >= halftoneRegionBitmap.Height)
+                    {
+                        bitmap.SetPixel(n, m, 1);
+                    }
+                    // else no need to set 0 pixels
                 }
             }
-
-            return value;
+            return bitmap;
         }
 
         public void Init(SegmentHeader header, SubInputStream sis)
