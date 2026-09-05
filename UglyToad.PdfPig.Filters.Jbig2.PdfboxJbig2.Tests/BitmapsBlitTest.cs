@@ -10,7 +10,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Tests
         [Fact]
         public void CompleteBitmapTransferTest()
         {
-            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("042_1.jb2").AsSpan());
+            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("042_1.jb2").AsMemory());
             using var doc = new Jbig2Document(iis);
 
             Jbig2Bitmap src = doc.GetPage(1).GetBitmap();
@@ -23,7 +23,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Tests
         [Fact]
         public void BlitAtNonByteAlignedOffsetTest()
         {
-            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("042_1.jb2").AsSpan());
+            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("042_1.jb2").AsMemory());
             using var doc = new Jbig2Document(iis);
 
             Jbig2Bitmap dst = doc.GetPage(1).GetBitmap();

@@ -20,9 +20,9 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Tests
             var globalsBytes = ImageHelpers.LoadFileBytes("github-21.glob");
             var imageBytes = ImageHelpers.LoadFileBytes("github-21.jb2");
 
-            using var globalsDocument = new Jbig2Document(new ImageInputStream(globalsBytes.AsSpan()));
+            using var globalsDocument = new Jbig2Document(new ImageInputStream(globalsBytes.AsMemory()));
 
-            using var doc = new Jbig2Document(new ImageInputStream(imageBytes.AsSpan()), globalsDocument.GlobalSegments);
+            using var doc = new Jbig2Document(new ImageInputStream(imageBytes.AsMemory()), globalsDocument.GlobalSegments);
 
             Jbig2Bitmap bitmap = doc.GetPage(1).GetBitmap();
 

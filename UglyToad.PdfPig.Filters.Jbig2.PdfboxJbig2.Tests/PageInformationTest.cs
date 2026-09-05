@@ -9,7 +9,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Tests
         [Fact]
         public void ParseHeaderCompleteTest()
         {
-            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("sampledata.jb2").AsSpan());
+            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("sampledata.jb2").AsMemory());
             // Second Segment (number 1)
             var sis = new SubInputStream(iis, 59, 19);
             var pi = new PageInformation();

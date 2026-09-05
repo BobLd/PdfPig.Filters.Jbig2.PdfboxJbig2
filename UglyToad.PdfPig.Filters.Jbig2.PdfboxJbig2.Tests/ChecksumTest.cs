@@ -68,7 +68,7 @@
         [MemberData(nameof(Data))]
         public void CompareChecksum(string filename, string checksum)
         {
-            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes(filename).AsSpan());
+            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes(filename).AsMemory());
             var doc = new Jbig2Document(iis);
 
             Jbig2Bitmap b = doc.GetPage(1).GetBitmap();

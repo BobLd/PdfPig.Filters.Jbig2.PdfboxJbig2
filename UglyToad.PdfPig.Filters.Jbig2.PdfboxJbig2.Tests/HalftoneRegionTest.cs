@@ -9,7 +9,7 @@
         [Fact]
         public void ParseHeaderTest()
         {
-            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("sampledata.jb2").AsSpan());
+            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("sampledata.jb2").AsMemory());
             // Seventh Segment (number 6)
             var sis = new SubInputStream(iis, 302, 87);
             var hr = new HalftoneRegion(sis);

@@ -18,6 +18,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         /// <summary>
         /// Constructs a <see cref="ImageInputStream"/> that will read the image data
         /// from a given byte array.
+        /// <para>Prefer using the constructor that takes a <see cref="ReadOnlyMemory{byte}"/> instead.</para>
         /// </summary>
         /// <param name="bytes"></param>
         public ImageInputStream(ReadOnlySpan<byte> bytes)

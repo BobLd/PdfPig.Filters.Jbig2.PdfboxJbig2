@@ -152,7 +152,7 @@
         [Fact]
         public void DecodeTestWithTracadataComparison()
         {
-            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("arith-encoded-testsequence.bin").AsSpan());
+            var iis = new ImageInputStream(ImageHelpers.LoadFileBytes("arith-encoded-testsequence.bin").AsMemory());
             var decoder = new ArithmeticDecoder(iis);
             var cx = new CX(1, 0);
 
