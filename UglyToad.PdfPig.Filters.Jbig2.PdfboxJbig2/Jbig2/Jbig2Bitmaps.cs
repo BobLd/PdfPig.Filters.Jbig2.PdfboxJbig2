@@ -1,9 +1,16 @@
 namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
 {
     using System;
+#if NET8_0_OR_GREATER
+    using System.Runtime.CompilerServices;
+    using System.Runtime.InteropServices;
+    using System.Runtime.Intrinsics;
+#endif
 
     internal static class Jbig2Bitmaps
     {
+
+
         /// <summary>
         /// Returns the specified rectangle area of the bitmap.
         /// </summary>
@@ -222,19 +229,136 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         private static void BlitUnshifted(Jbig2Bitmap src, Jbig2Bitmap dst, int startLine, int lastLine,
                 int dstStartIdx, int srcStartIdx, int srcEndIdx, CombinationOperator op)
         {
-            for (int dstLine = startLine; dstLine < lastLine; dstLine++, dstStartIdx += dst
-                    .RowStride, srcStartIdx += src.RowStride, srcEndIdx += src.RowStride)
-            {
-                int dstIdx = dstStartIdx;
+            byte[] srcBytes = src.ByteArray;
+            byte[] dstBytes = dst.ByteArray;
+            int srcRowStride = src.RowStride;
+            int dstRowStride = dst.RowStride;
 
-                // Go through the bytes in a line of the Symbol
-                for (int srcIdx = srcStartIdx; srcIdx <= srcEndIdx; srcIdx++)
+            for (int dstLine = startLine; dstLine < lastLine; dstLine++, dstStartIdx += dstRowStride,
+                 srcStartIdx += srcRowStride, srcEndIdx += srcRowStride)
+            {
+                // Go through the bytes in a line of the Symbol. Both sides are byte aligned here, so a
+                // whole row is a straight run of independent byte combinations.
+                int count = srcEndIdx - srcStartIdx + 1;
+                if (count <= 0)
                 {
-                    byte oldByte = dst.GetByte(dstIdx);
-                    byte newByte = src.GetByte(srcIdx);
-                    dst.SetByte(dstIdx++, CombineBytes(oldByte, newByte, op));
+                    continue;
+                }
+
+                if (count < MinVectorizableBytes)
+                {
+                    // Symbol sized rows are only a byte or two wide. They cannot fill even the narrowest
+                    // vector, so going through CombineRun would only add a call and two span slices on
+                    // top of the same scalar loop.
+                    int dstIdx = dstStartIdx;
+                    for (int srcIdx = srcStartIdx; srcIdx <= srcEndIdx; srcIdx++)
+                    {
+                        ref byte d = ref dstBytes[dstIdx++];
+                        d = CombineBytes(d, srcBytes[srcIdx], op);
+                    }
+                }
+                else
+                {
+                    CombineRun(
+                        srcBytes.AsSpan(srcStartIdx, count),
+                        dstBytes.AsSpan(dstStartIdx, count),
+                        op);
                 }
             }
+        }
+
+        /// <summary>
+        /// Runs shorter than this cannot fill a 128 bit vector of bytes, the narrowest that any of the
+        /// dispatch tiers uses, so they are always handled by a plain scalar loop instead.
+        /// </summary>
+        private const int MinVectorizableBytes = 16;
+
+        /// <summary>
+        /// Applies <paramref name="op"/> element-wise between <paramref name="source"/> and
+        /// <paramref name="destination"/>, writing the result into <paramref name="destination"/>.
+        /// Equivalent to calling <see cref="CombineBytes"/> for each byte, with the destination as
+        /// value1 and the source as value2.
+        /// </summary>
+        private static void CombineRun(ReadOnlySpan<byte> source, Span<byte> destination, CombinationOperator op)
+        {
+            if (op == CombinationOperator.REPLACE)
+            {
+                // The old value is discarded, so this is just a copy.
+                source.CopyTo(destination);
+                return;
+            }
+
+#if NET8_0_OR_GREATER
+            ref byte src = ref MemoryMarshal.GetReference(source);
+            ref byte dst = ref MemoryMarshal.GetReference(destination);
+            nuint i = 0;
+            nuint length = (nuint)source.Length;
+
+            // The operator is loop invariant, so the switch below costs one well predicted branch per
+            // vector rather than per byte.
+            if (Vector512.IsHardwareAccelerated)
+            {
+                nuint step = (nuint)Vector512<byte>.Count;
+                for (; i + step <= length; i += step)
+                {
+                    Vector512<byte> s = Vector512.LoadUnsafe(ref src, i);
+                    Vector512<byte> d = Vector512.LoadUnsafe(ref dst, i);
+                    Vector512<byte> r = op switch
+                    {
+                        CombinationOperator.OR => s | d,
+                        CombinationOperator.AND => s & d,
+                        CombinationOperator.XOR => s ^ d,
+                        _ => ~(s ^ d), // XNOR
+                    };
+                    Vector512.StoreUnsafe(r, ref dst, i);
+                }
+            }
+            else if (Vector256.IsHardwareAccelerated)
+            {
+                nuint step = (nuint)Vector256<byte>.Count;
+                for (; i + step <= length; i += step)
+                {
+                    Vector256<byte> s = Vector256.LoadUnsafe(ref src, i);
+                    Vector256<byte> d = Vector256.LoadUnsafe(ref dst, i);
+                    Vector256<byte> r = op switch
+                    {
+                        CombinationOperator.OR => s | d,
+                        CombinationOperator.AND => s & d,
+                        CombinationOperator.XOR => s ^ d,
+                        _ => ~(s ^ d), // XNOR
+                    };
+                    Vector256.StoreUnsafe(r, ref dst, i);
+                }
+            }
+            else if (Vector128.IsHardwareAccelerated)
+            {
+                nuint step = (nuint)Vector128<byte>.Count;
+                for (; i + step <= length; i += step)
+                {
+                    Vector128<byte> s = Vector128.LoadUnsafe(ref src, i);
+                    Vector128<byte> d = Vector128.LoadUnsafe(ref dst, i);
+                    Vector128<byte> r = op switch
+                    {
+                        CombinationOperator.OR => s | d,
+                        CombinationOperator.AND => s & d,
+                        CombinationOperator.XOR => s ^ d,
+                        _ => ~(s ^ d), // XNOR
+                    };
+                    Vector128.StoreUnsafe(r, ref dst, i);
+                }
+            }
+
+            for (; i < length; i++)
+            {
+                ref byte d = ref Unsafe.Add(ref dst, i);
+                d = CombineBytes(d, Unsafe.Add(ref src, i), op);
+            }
+#else
+            for (int i = 0; i < source.Length; i++)
+            {
+                destination[i] = CombineBytes(destination[i], source[i], op);
+            }
+#endif
         }
 
         private static void BlitSpecialShifted(Jbig2Bitmap src, Jbig2Bitmap dst, int startLine, int lastLine,
