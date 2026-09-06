@@ -1,4 +1,9 @@
-﻿using UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2;
+﻿#if NET8_0_OR_GREATER
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+#endif
+using UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2;
 using UglyToad.PdfPig.Tokens;
 
 namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2
@@ -34,11 +39,7 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2
                 var data = bitmap.ByteArray;
 
                 // We always invert bits - this makes test 'CanDecodeJbig2CompressedImageData_WithGlobalSegments' fail
-                for (int i = 0; i < data.Length; ++i)
-                {
-                    ref byte x = ref data[i];
-                    x = (byte)~x;
-                }
+                InvertBits(data);
 
                 return data;
             }
@@ -51,6 +52,56 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2
                 return bitmap.ByteArray;
             }
             */
+        }
+
+        /// <summary>
+        /// Inverts every byte of the decoded bitmap.
+        /// <para>This runs over the entire output on every decode and is a bulk bitwise complement over
+        /// a contiguous byte array with no dependencies between elements, so it vectorises cleanly.</para>
+        /// </summary>
+        private static void InvertBits(byte[] data)
+        {
+#if NET8_0_OR_GREATER
+            ref byte start = ref MemoryMarshal.GetArrayDataReference(data);
+            nuint i = 0;
+            nuint length = (nuint)data.Length;
+
+            if (Vector512.IsHardwareAccelerated)
+            {
+                nuint step = (nuint)Vector512<byte>.Count;
+                for (; i + step <= length; i += step)
+                {
+                    Vector512.StoreUnsafe(~Vector512.LoadUnsafe(ref start, i), ref start, i);
+                }
+            }
+            else if (Vector256.IsHardwareAccelerated)
+            {
+                nuint step = (nuint)Vector256<byte>.Count;
+                for (; i + step <= length; i += step)
+                {
+                    Vector256.StoreUnsafe(~Vector256.LoadUnsafe(ref start, i), ref start, i);
+                }
+            }
+            else if (Vector128.IsHardwareAccelerated)
+            {
+                nuint step = (nuint)Vector128<byte>.Count;
+                for (; i + step <= length; i += step)
+                {
+                    Vector128.StoreUnsafe(~Vector128.LoadUnsafe(ref start, i), ref start, i);
+                }
+            }
+
+            for (; i < length; i++)
+            {
+                Unsafe.Add(ref start, i) = (byte)~Unsafe.Add(ref start, i);
+            }
+#else
+            for (int i = 0; i < data.Length; ++i)
+            {
+                ref byte x = ref data[i];
+                x = (byte)~x;
+            }
+#endif
         }
 
         /*
