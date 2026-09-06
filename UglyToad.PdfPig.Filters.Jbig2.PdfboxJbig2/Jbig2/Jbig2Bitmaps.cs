@@ -229,49 +229,21 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         private static void BlitUnshifted(Jbig2Bitmap src, Jbig2Bitmap dst, int startLine, int lastLine,
                 int dstStartIdx, int srcStartIdx, int srcEndIdx, CombinationOperator op)
         {
-            byte[] srcBytes = src.ByteArray;
-            byte[] dstBytes = dst.ByteArray;
-            int srcRowStride = src.RowStride;
-            int dstRowStride = dst.RowStride;
-
-            for (int dstLine = startLine; dstLine < lastLine; dstLine++, dstStartIdx += dstRowStride,
-                 srcStartIdx += srcRowStride, srcEndIdx += srcRowStride)
+            for (int dstLine = startLine; dstLine < lastLine; dstLine++, dstStartIdx += dst
+                    .RowStride, srcStartIdx += src.RowStride, srcEndIdx += src.RowStride)
             {
                 // Go through the bytes in a line of the Symbol. Both sides are byte aligned here, so a
                 // whole row is a straight run of independent byte combinations.
                 int count = srcEndIdx - srcStartIdx + 1;
-                if (count <= 0)
-                {
-                    continue;
-                }
-
-                if (count < MinVectorizableBytes)
-                {
-                    // Symbol sized rows are only a byte or two wide. They cannot fill even the narrowest
-                    // vector, so going through CombineRun would only add a call and two span slices on
-                    // top of the same scalar loop.
-                    int dstIdx = dstStartIdx;
-                    for (int srcIdx = srcStartIdx; srcIdx <= srcEndIdx; srcIdx++)
-                    {
-                        ref byte d = ref dstBytes[dstIdx++];
-                        d = CombineBytes(d, srcBytes[srcIdx], op);
-                    }
-                }
-                else
+                if (count > 0)
                 {
                     CombineRun(
-                        srcBytes.AsSpan(srcStartIdx, count),
-                        dstBytes.AsSpan(dstStartIdx, count),
+                        src.ByteArray.AsSpan(srcStartIdx, count),
+                        dst.ByteArray.AsSpan(dstStartIdx, count),
                         op);
                 }
             }
         }
-
-        /// <summary>
-        /// Runs shorter than this cannot fill a 128 bit vector of bytes, the narrowest that any of the
-        /// dispatch tiers uses, so they are always handled by a plain scalar loop instead.
-        /// </summary>
-        private const int MinVectorizableBytes = 16;
 
         /// <summary>
         /// Applies <paramref name="op"/> element-wise between <paramref name="source"/> and
