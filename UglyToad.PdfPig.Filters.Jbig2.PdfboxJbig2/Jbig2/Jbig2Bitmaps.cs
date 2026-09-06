@@ -305,24 +305,78 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
         private static void BlitByPixel(Jbig2Bitmap src, Jbig2Bitmap dst, int xDstOffset, int yDstOffset,
                 CombinationOperator combinationOperator)
         {
-            for (int y = 0; y < src.Height && yDstOffset + y < dst.Height; y++)
+            // The original loops tested the clip conditions on every pixel and skipped with continue.
+            // Both conditions are monotonic in the loop variable, so the pixels that survived them form
+            // a contiguous range that can be worked out once up front.
+            int yStart = Math.Max(0, -yDstOffset);
+            int yEnd = Math.Min(src.Height, dst.Height - yDstOffset);
+            int xStart = Math.Max(0, -xDstOffset);
+            int xEnd = Math.Min(src.Width, dst.Width - xDstOffset);
+
+            if (yStart >= yEnd || xStart >= xEnd)
             {
-                if (yDstOffset + y < 0)
-                {
-                    continue;
-                }
+                return;
+            }
 
-                for (int x = 0; x < src.Width && xDstOffset + x < dst.Width; x++)
-                {
-                    if (xDstOffset + x < 0)
-                    {
-                        continue;
-                    }
+            // Both operands are single bits, so the combination operator is fully described by a four
+            // entry truth table indexed by (dstBit << 1) | srcBit. Looking it up is branch free and
+            // keeps the operator dispatch out of the inner loop.
+            int truthTable = GetBitTruthTable(combinationOperator);
 
-                    byte resultBit = CombineBytes(dst.GetPixel(xDstOffset + x, yDstOffset + y),
-                            src.GetPixel(x, y), combinationOperator);
-                    dst.SetPixel(xDstOffset + x, yDstOffset + y, resultBit);
+            byte[] srcBytes = src.ByteArray;
+            byte[] dstBytes = dst.ByteArray;
+            int srcRowStride = src.RowStride;
+            int dstRowStride = dst.RowStride;
+
+            for (int y = yStart; y < yEnd; y++)
+            {
+                int srcRow = y * srcRowStride;
+                int dstRow = (yDstOffset + y) * dstRowStride;
+
+                for (int x = xStart; x < xEnd; x++)
+                {
+                    int dstX = xDstOffset + x;
+
+                    int srcBit = srcBytes[srcRow + (x >> 3)] >> (7 - (x & 0x07)) & 1;
+
+                    // Taken by reference so the byte is located once and then read and written through
+                    // the same bounds checked access.
+                    ref byte dstByte = ref dstBytes[dstRow + (dstX >> 3)];
+                    int dstShift = 7 - (dstX & 0x07);
+                    int dstBit = dstByte >> dstShift & 1;
+
+                    int mask = 1 << dstShift;
+                    dstByte = (truthTable >> ((dstBit << 1) | srcBit) & 1) != 0
+                        ? (byte)(dstByte | mask)
+                        : (byte)(dstByte & ~mask);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Returns the combination operator as a four bit truth table, where bit
+        /// <c>(dstBit &lt;&lt; 1) | srcBit</c> holds the resulting pixel value. Mirrors
+        /// <see cref="CombineBytes"/> for single bit operands, including its fall through to REPLACE.
+        /// </summary>
+        private static int GetBitTruthTable(CombinationOperator op)
+        {
+            switch (op)
+            {
+                case CombinationOperator.OR:
+                    return 0b1110;
+
+                case CombinationOperator.AND:
+                    return 0b1000;
+
+                case CombinationOperator.XOR:
+                    return 0b0110;
+
+                case CombinationOperator.XNOR:
+                    return 0b1001;
+
+                case CombinationOperator.REPLACE:
+                default:
+                    return 0b1010;
             }
         }
     }
