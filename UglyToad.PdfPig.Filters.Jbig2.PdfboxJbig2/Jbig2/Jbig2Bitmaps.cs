@@ -333,22 +333,32 @@ namespace UglyToad.PdfPig.Filters.Jbig2.PdfboxJbig2.Jbig2
                 int srcRow = y * srcRowStride;
                 int dstRow = (yDstOffset + y) * dstRowStride;
 
-                for (int x = xStart; x < xEnd; x++)
+                int x = xStart;
+                while (x < xEnd)
                 {
-                    int dstX = xDstOffset + x;
+                    // A single source byte covers the next run of up to eight pixels, so load it once
+                    // and walk down its bits rather than re-reading it for every pixel.
+                    int srcShift = 7 - (x & 0x07);
+                    int srcByte = srcBytes[srcRow + (x >> 3)];
+                    int runEnd = Math.Min(x + srcShift + 1, xEnd);
 
-                    int srcBit = srcBytes[srcRow + (x >> 3)] >> (7 - (x & 0x07)) & 1;
+                    for (; x < runEnd; x++, srcShift--)
+                    {
+                        int srcBit = srcByte >> srcShift & 1;
 
-                    // Taken by reference so the byte is located once and then read and written through
-                    // the same bounds checked access.
-                    ref byte dstByte = ref dstBytes[dstRow + (dstX >> 3)];
-                    int dstShift = 7 - (dstX & 0x07);
-                    int dstBit = dstByte >> dstShift & 1;
+                        int dstX = xDstOffset + x;
 
-                    int mask = 1 << dstShift;
-                    dstByte = (truthTable >> ((dstBit << 1) | srcBit) & 1) != 0
-                        ? (byte)(dstByte | mask)
-                        : (byte)(dstByte & ~mask);
+                        // Taken by reference so the byte is located once and then read and written
+                        // through the same bounds checked access.
+                        ref byte dstByte = ref dstBytes[dstRow + (dstX >> 3)];
+                        int dstShift = 7 - (dstX & 0x07);
+                        int dstBit = dstByte >> dstShift & 1;
+
+                        int mask = 1 << dstShift;
+                        dstByte = (truthTable >> ((dstBit << 1) | srcBit) & 1) != 0
+                            ? (byte)(dstByte | mask)
+                            : (byte)(dstByte & ~mask);
+                    }
                 }
             }
         }
